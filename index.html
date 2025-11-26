@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Выбор Князя — Историческая мини-игра</title>
+  <style>
+    :root{--bg:#0f0f13;--panel:#16161a;--accent:#8b0000;--muted:#cfcfcf}
+    body{margin:0;font-family:Inter,Arial,Helvetica,sans-serif;background:var(--bg);color:#fff;display:flex;flex-direction:column;align-items:center;min-height:100vh}
+    header{padding:20px;text-align:center}
+    h1{margin:0;font-size:1.6rem}
+    #gameBox{width:100%;max-width:820px;background:var(--panel);border-radius:12px;padding:18px;margin:12px;box-shadow:0 8px 30px rgba(0,0,0,0.6)}
+    #question{min-height:88px;display:flex;align-items:center;justify-content:center;font-size:1.05rem;padding:12px}
+    .answers{display:grid;grid-template-columns:1fr;gap:10px;padding:8px}
+    .btn{background:var(--accent);border:none;padding:12px;border-radius:10px;color:white;font-weight:600;cursor:pointer}
+    .btn:active{transform:translateY(1px)}
+    #hud{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:10px}
+    .stat{background:#0b0b0d;padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.03);min-width:120px;text-align:left}
+    .stat b{display:block;font-size:0.9rem}
+    footer{color:var(--muted);font-size:0.85rem;padding:12px}
+    @media(min-width:640px){ .answers{grid-template-columns:repeat(2,1fr)} }
+    .row{display:flex;gap:8px;align-items:center}
+    .small{font-size:0.9rem;color:var(--muted)}
+    #minimap{width:120px;height:80px;background:#0b0b0d;border-radius:8px;border:1px solid rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;font-size:0.75rem}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>«Выбор Князя» — историческая мини-игра</h1>
+    <div class="small">Короткая, интересная и готовая для презентации — 7–10 минут игры</div>
+  </header>
+
+  <main id="gameBox" role="main" aria-labelledby="question">
+    <div id="question">Загрузка...</div>
+    <div class="answers" id="answers"></div>
+
+    <div id="hud" aria-hidden="false" style="margin-top:14px">
+      <div class="stat"><b id="food">Провиант: 50</b><span class="small">Запасы для армии и народа</span></div>
+      <div class="stat"><b id="army">Армия: 50</b><span class="small">Готовность к войне</span></div>
+      <div class="stat"><b id="support">Поддержка: 50</b><span class="small">Доверие бояр и людей</span></div>
+      <div class="stat"><b id="religion">Религия: язычество</b><span class="small">Культурный выбор</span></div>
+      <div class="stat" id="minimap">Карта: Киев</div>
+    </div>
+  </main>
+
+  <footer>
+    <span class="small">Подготовлено для проекта 10 класса — можно скачать и залить на GitHub Pages / Netlify / Vercel.</span>
+  </footer>
+
+  <script>
+    // Игра: структура сцен, эффекты и логика
+    const state = { food:50, army:50, support:50, religion:'язычество', turn:0 };
+
+    const scenes = [
+      { id:'intro', text:'Ты — наследник Киевского престола. День коронации. Твоя первая задача — заручиться поддержкой.', opts:[
+        {t:'Созвать вече и говорить с людьми', next:'walls', effect: s=>{s.support+=10; s.food-=5}},
+        {t:'Устроить пир и показать щедрость', next:'walls', effect: s=>{s.support+=8; s.food-=15}}
+      ]},
+      { id:'walls', text:'Город неукреплён. Как поступишь?', opts:[
+        {t:'Укрепить стены и гарнизон', next:'supply', effect: s=>{s.army+=12; s.food-=10}},
+        {t:'Сосредоточиться на торговле и доходах', next:'supply', effect: s=>{s.food+=12; s.support+=4}}
+      ]},
+      { id:'supply', text:'Запасы — ключ. Как пополнить провиант?', opts:[
+        {t:'Договориться с Новгородом о торговле', next:'byzantine', effect: s=>{s.food+=15; s.support+=5}},
+        {t:'Отправить дружину собирать дань', next:'byzantine', effect: s=>{s.food+=20; s.support-=8}}
+      ]},
+      { id:'byzantine', text:'Приходят гонцы из Византии с предложением союза и крещения. Твой ответ?', opts:[
+        {t:'Принять союз и христианство', next:'threat', effect: s=>{s.religion='христианство'; s.support+=10}},
+        {t:'Отклонить союз, сохранить традиции', next:'threat', effect: s=>{s.support+=2}}
+      ]},
+      { id:'threat', text:'К границам двигается враждебное племя. Что делаем?', opts:[
+        {t:'Встретить их дружиной', next:'final', effect: s=>{s.army-=15; s.support+=5}},
+        {t:'Попытаться договориться о мире', next:'final', effect: s=>{s.support-=5; s.food-=5}}
+      ]},
+      { id:'final', text:'Время подвести итоги правления. Нажми «Узнать итог».', opts:[
+        {t:'Узнать итог', next:'ending', effect: s=>{}}
+      ]},
+      { id:'ending', text:'', opts:[] }
+    ];
+
+    function clamp(x){ return Math.max(0, Math.min(100, Math.round(x))); }
+
+    function renderScene(scene){
+      document.getElementById('question').innerText = scene.text;
+      const answers = document.getElementById('answers');
+      answers.innerHTML = '';
+      scene.opts.forEach(opt=>{
+        const btn = document.createElement('button');
+        btn.className = 'btn';
+        btn.innerText = opt.t;
+        btn.onclick = ()=>{
+          opt.effect(state);
+          state.turn++;
+          updateHUD();
+          const next = scenes.find(s=>s.id===opt.next);
+          if(next) renderScene(next);
+          if(opt.next==='ending') showEnding();
+        };
+        answers.appendChild(btn);
+      });
+    }
+
+    function showEnding(){
+      const q = document.getElementById('question');
+      const a = document.getElementById('answers');
+      let text='';
+      if(state.army>60 && state.support>60 && state.religion==='христианство'){
+        text='Лучшее правление: ты объединил земли, укрепил культуру и государство. Киев стал центром притяжения.';
+      } else if(state.army<30 || state.support<30){
+        text='Плохое правление: усобицы и раздор. Земли ослабли.';
+      } else {
+        text='Нейтральное правление: стабильность, но без великих достижений.';
+      }
+      q.innerText = text;
+      a.innerHTML = '<div class="small" style="padding:6px">Спасибо за игру! Ты можешь пройти заново или скачать игру для реквизита проекта.</div>';
+      const retry = document.createElement('button');
+      retry.className='btn';
+      retry.style.marginTop='8px';
+      retry.innerText='Пройти заново';
+      retry.onclick = ()=>{ location.reload(); };
+      a.appendChild(retry);
+    }
+
+    function updateHUD(){
+      state.food = clamp(state.food);
+      state.army = clamp(state.army);
+      state.support = clamp(state.support);
+      document.getElementById('food').innerText = 'Провиант: '+state.food;
+      document.getElementById('army').innerText = 'Армия: '+state.army;
+      document.getElementById('support').innerText = 'Поддержка: '+state.support;
+      document.getElementById('religion').innerText = 'Религия: '+state.religion;
+      // simple minimap label
+      const mm = document.getElementById('minimap');
+      mm.innerText = state.religion==='христианство' ? 'Карта: союз с Византией' : 'Карта: традиционные земли';
+    }
+
+    // start
+    updateHUD();
+    renderScene(scenes[0]);
+
+    // keyboard accessibility: 1..4 for choices
+    document.addEventListener('keydown', (e)=>{
+      if(['1','2','3','4'].includes(e.key)){
+        const idx = parseInt(e.key)-1;
+        const buttons = document.querySelectorAll('#answers .btn');
+        if(buttons[idx]) buttons[idx].click();
+      }
+    });
+
+  </script>
+</body>
+</html>
